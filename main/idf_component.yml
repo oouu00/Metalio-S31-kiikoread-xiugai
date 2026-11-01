@@ -13,5 +13,3 @@ dependencies:
   # 音频解码（MP3/AAC(M4A)/FLAC/WAV 的 Simple Decoder）。
   # Audio decoding (MP3/AAC(M4A)/FLAC/WAV via the Simple Decoder).
   espressif/esp_audio_codec: 2.6.2
-  # esp-sr：语音翻页识别。/ esp-sr: speech recognition for voice page-turn.
-  espressif/esp-sr: 2.6.0
