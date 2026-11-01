@@ -1,0 +1,32 @@
+dependencies:
+  idf: '>=4.4'
+description: Simple FTP server for ESP-IDF (VFS + lwIP), port of SimpleFTPServer
+files:
+  exclude:
+  - '**/.DS_Store'
+  - '**/__pycache__'
+  - .git
+  - dist/**/*
+  - CHECKSUMS.json
+  - .component_hash
+  - '**/КАК_ЗАЛИТЬ_В_REGISTRY.md'
+  - examples/**/build/**/*
+  - examples/**/sdkconfig
+  - examples/**/sdkconfig.old
+  - examples/**/dependencies.lock
+  - examples/**/managed_components/**/*
+license: MIT
+maintainers:
+- Cezap
+targets:
+- esp32
+- esp32s2
+- esp32s3
+- esp32s31
+- esp32c2
+- esp32c3
+- esp32c6
+- esp32h2
+- esp32p4
+url: https://www.mischianti.org/category/my-libraries/simple-ftp-server/
+version: 1.0.0

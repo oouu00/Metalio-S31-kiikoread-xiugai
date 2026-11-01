@@ -1,0 +1,37 @@
+# Name, Type, SubType, Offset, Size, Flags
+#
+# 16 MB flash 的分配（0x1000000）。历史沿革：双模蓝牙（Bluedroid 经典 + BLE）让 app 从
+# ~4.6MB 涨到 ~5.4MB，第一次把 FAT 从 5.9MB 缩到 4.125MB、app 各给 5.875MB；音乐/在线字体
+# 之后 app 只剩 ~48KB 余量（debug 镜像 6,112,016B / 分区 6,160,384B），再没地方加功能。
+#
+# 这次调整（2026-10-31）：
+#   app   5.875MB -> 7MB 各（余量 ~1.2MB），OTA 双槽仍等大；
+#   nvs   16KB -> 28KB（现场日志反复 ESP_ERR_NVS_NOT_ENOUGH_SPACE，boot_state 的
+#         checkpoint blob 已经写不进去）。nvs 起始地址仍是 0x9000，老数据保留；
+#   FAT   4.125MB -> 1.75MB，继续当“没插 SD 卡时的书籍兜底仓”（单文件上限 1MB）；
+#   otadata / phy_init 挪到末尾：app 分区必须按 64KB 对齐，把它们放在前面会把
+#   0x10000 这个位置占掉，nvs 就没法变长。
+#
+# Layout of the 16 MB flash. Dual-mode Bluetooth first pushed the app from ~4.6MB to ~5.4MB
+# (FAT 5.9 -> 4.125MB, app 5.875MB each). Music plus online fonts then left the debug image with
+# only ~48KB spare (6,112,016B of 6,160,384B), so nothing new could be added.
+#
+# This pass: app 5.875 -> 7MB each (~1.2MB spare); NVS 16 -> 28KB because the field log kept
+# reporting ESP_ERR_NVS_NOT_ENOUGH_SPACE for boot_state's checkpoint blob (NVS still starts at
+# 0x9000, so existing data survives); FAT 4.125 -> 1.75MB, still the "no SD card" book fallback
+# (1MB per-file cap); otadata/phy_init moved to the tail because app partitions must be 64KB
+# aligned — leaving them up front would hold 0x10000 and there would be no room to grow NVS.
+#
+# 注意 / Note: 分区表一变，ota_0/ota_1/storage 的偏移全变：
+#   - NVS 仍在 0x9000 只是变长，设置/配对/书签保留，新增页会被初始化；
+#   - storage(FAT) 换了位置，旧位置的书不可见，挂载失败会重新格式化 /flash；
+#   - otadata 也换了位置，刷机会一起写入 ota_data_initial.bin（OTA 状态重置）。
+#   - NVS survives (same start, longer); the FAT moves, so /flash is reformatted and books kept
+#     there are gone; otadata moves too and is rewritten on flash (OTA state reset).
+nvs,      data, nvs,      0x9000,   0x7000,
+ota_0,    app,  ota_0,    0x10000,  0x700000,
+ota_1,    app,  ota_1,    0x710000, 0x700000,
+storage,  data, fat,      0xe10000, 0x1c0000,
+coredump, data, coredump, 0xfd0000, 0x10000,
+otadata,  data, ota,      0xfe0000, 0x2000,
+phy_init, data, phy,      0xfe2000, 0x1000,

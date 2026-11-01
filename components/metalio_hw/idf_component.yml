@@ -1,0 +1,5 @@
+version: "1.0.0"
+description: "Metalio 4.7 board hardware (power path, front light, haptic, USB)"
+# 音频改走板载蓝牙音频模组（UART AT + I2S），不再依赖 espressif/esp_bt_audio。
+# Audio now runs on the board's Bluetooth audio module (UART AT + I2S), so the
+# espressif/esp_bt_audio dependency is gone.

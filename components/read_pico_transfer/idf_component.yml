@@ -1,0 +1,5 @@
+dependencies:
+  espressif/cjson: "1.7.19~2"
+  # FTP传输与网页二选一（用户2026-10-29）；仅metalio47传书代码调用。
+  # FTP transfer, exclusive with web (user 2026-10-29); used by metalio47 transfer only.
+  Cezap/simple_ftp_server: "^1.0.0"

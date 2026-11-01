@@ -1,0 +1,11 @@
+# 正式版（release 档）增量配置：叠加在 sdkconfig.defaults 之后，是唯一允许覆盖日志项的档。
+# 编译期把 INFO/WARN/DEBUG 全部裁掉，只留 ERROR：串口每行在 115200 下阻塞约 9 ms，
+# 关掉习惯性输出比任何调度优化都直接；同时把日志字符串从固件里删掉，减小镜像。
+# Release overlay, applied after sdkconfig.defaults. INFO/WARN/DEBUG are compiled out and only
+# ERROR survives: a log line blocks ~9 ms at 115200, so dropping the chatter is the cheapest
+# win available, and the strings disappear from the image too.
+CONFIG_LOG_DEFAULT_LEVEL_ERROR=y
+CONFIG_LOG_MAXIMUM_EQUALS_DEFAULT=y
+# 引导阶段同理，只留告警及以上。
+# Same for the bootloader: warnings and errors only.
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y

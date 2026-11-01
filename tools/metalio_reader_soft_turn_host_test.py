@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: LicenseRef-Kiikoread-Personal-Study-1.0
+"""核对完整GL48普通时序、无分配/OOM一致性及独立DU加四白；不连接设备。
+Check full GL48 ordinary bytes, allocation/OOM invariance and separate DU plus four whites; no device access.
+"""
+from pathlib import Path
+import hashlib
+import subprocess
+import sys
+import tempfile
+from board_source_view import materialize
+
+ROOT = Path(__file__).resolve().parents[1]
+UNIT = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "display_reader_waveform.h"
+#include "display_main_waveform.h"
+#include "e0470_epaper_waveform.h"
+static bool oom;
+static int allocations;
+void *heap_caps_malloc(size_t n,int caps){assert(caps==3);++allocations;return oom?NULL:malloc(n);}
+int epd_width(void){return 1216;}
+int epd_height(void){return 684;}
+enum EpdRotation epd_get_rotation(void){return EPD_ROT_INVERTED_PORTRAIT;}
+static int trailing_holds(const EpdWaveformPhases *p){
+ int count=0;
+ for(int f=p->phases-1;f>=0;--f){bool active=false;
+  for(int t=0;t<16;++t)for(int a=0;a<16;++a)active|=e0470_phase_action(p,f,t,a)!=0;
+  if(active)break;
+  ++count;
+ }
+ return count;
+}
+int main(int argc,char **argv){
+ assert(argc==3);oom=atoi(argv[1]);e0470_waveform_init();
+ const EpdWaveformPhases *raw=e0470_waveform_phases(&E0470_FULL_WAVEFORM,MODE_GL16);
+ unsigned char saved[48*64];assert(raw&&raw->phases==48);memcpy(saved,raw->luts,sizeof(saved));
+ const EpdWaveform *normal=display_reader_soft_turn_waveform();
+ const EpdWaveformPhases *n=e0470_waveform_phases(normal,MODE_GL16);
+ assert(normal!=&E0470_WAVEFORM&&n&&n->phases==55);
+ assert(display_reader_soft_turn_waveform()==normal);
+ const EpdWaveformPhases *base=raw;
+ int hold=trailing_holds(base),drive=base->phases-hold;
+ for(int to=0;to<16;++to)for(int from=0;from<16;++from){
+  for(int f=0;f<drive;++f){int expected=e0470_phase_action(base,f,to,from);
+   if(to==0&&from==0&&expected==2)expected=0;
+   assert(e0470_phase_action(n,f,to,from)==expected);
+  }
+  for(int f=drive;f<drive+4;++f)assert(e0470_phase_action(n,f,to,from)==(to==15?2:0));
+  for(int f=drive+4;f<n->phases;++f)assert(e0470_phase_action(n,f,to,from)==0);
+ }
+ assert(trailing_holds(n)>=3&&!n->phase_times);
+ FILE *dump=fopen(argv[2],"wb");assert(dump&&fwrite(n->luts,64,n->phases,dump)==55&&fclose(dump)==0);
+ assert(!memcmp(saved,raw->luts,sizeof(saved)));
+ assert(allocations==0);
+ // 普通翻页「快」= rc107 的 GL37 差分页：等值动作全部清零 + 六相目标白 + 原定稿保持。
+ // Ordinary-fast = rc107's GL37 diff page: every equal action cleared, six white-target phases, original holds.
+ const EpdWaveform *ft_base=display_reader_panel37_waveform();
+ if(!ft_base)ft_base=&E0470_WAVEFORM;
+ // panel37 自带建表缓存，允许分配；快表本身必须零分配（与慢表同一约束）。
+ // panel37 builds its own cache and may allocate; the fast table itself must stay allocation-free.
+ const int alloc_after_panel=allocations;
+ const EpdWaveformPhases *fg=e0470_waveform_phases(ft_base,MODE_GL16);
+ assert(fg&&fg->luts&&!fg->phase_times);
+ const EpdWaveform *fast_turn=display_reader_soft_turn_fast_waveform();
+ const EpdWaveformPhases *ft=e0470_waveform_phases(fast_turn,MODE_GL16);
+ assert(fast_turn==display_reader_soft_turn_fast_waveform()&&fast_turn!=normal&&ft&&ft!=n);
+ assert(!e0470_waveform_phases(fast_turn,MODE_GC16)&&!e0470_waveform_phases(fast_turn,MODE_DU));
+ int fhold=trailing_holds(fg);if(fhold>4)fhold=4;
+ int fdrive=fg->phases-fhold;
+ assert(ft->phases==fdrive+6+(fhold?fhold:3));
+ assert(!memcmp(saved,raw->luts,sizeof(saved)));
+ for(int to=0;to<16;++to)for(int from=0;from<16;++from){
+  for(int f=0;f<fdrive;++f){
+   int expected=e0470_phase_action(fg,f,to,from);
+   if(to==from)expected=0;
+   assert(e0470_phase_action(ft,f,to,from)==expected);
+  }
+  for(int f=fdrive;f<fdrive+6;++f)assert(e0470_phase_action(ft,f,to,from)==(to==15?2:0));
+  for(int f=fdrive+6;f<ft->phases;++f)assert(e0470_phase_action(ft,f,to,from)==0);
+ }
+ // 快表构建零分配：只允许 panel37 自己的建表缓存发生变化。/ The fast builder must not allocate beyond panel37's own cache.
+ assert(allocations==alloc_after_panel&&!memcmp(saved,raw->luts,sizeof(saved)));
+ // 上游：把慢表 LUT 落盘（argv[2]），便于离线比对波形。/ Upstream: dump the slow luts to argv[2] for offline waveform diff.
+ FILE *dump=fopen(argv[2],"wb");assert(dump&&fwrite(n->luts,64,n->phases,dump)==(size_t)n->phases&&fclose(dump)==0);
+ const EpdWaveform *binary=&E0470_FULL_WAVEFORM;
+#if KIIKO_S31_DU14
+ binary=display_du14_white_waveform();
+#endif
+ const EpdWaveformPhases *du=e0470_waveform_phases(binary,MODE_DU);
+ unsigned char old_du[24*64];assert(du&&du->phases<=20);memcpy(old_du,du->luts,(size_t)du->phases*64);
+ const EpdWaveform *fast=display_reader_fast_text_waveform();
+ const EpdWaveformPhases *b=e0470_waveform_phases(fast,MODE_GL16);
+ assert(fast&&fast==display_reader_fast_text_waveform()&&fast!=normal&&b&&b->phases==du->phases+4);
+ assert(!e0470_waveform_phases(fast,MODE_GC16)&&!e0470_waveform_phases(fast,MODE_DU));
+ hold=trailing_holds(du);drive=du->phases-hold;assert(trailing_holds(b)==hold);
+ for(int to=0;to<16;++to)for(int from=0;from<16;++from){
+  for(int f=0;f<drive;++f)assert(e0470_phase_action(b,f,to,from)==e0470_phase_action(du,f,to,from));
+  for(int f=drive;f<drive+4;++f)assert(e0470_phase_action(b,f,to,from)==(to==15?2:0));
+  for(int f=0;f<hold;++f)assert(e0470_phase_action(b,drive+4+f,to,from)==e0470_phase_action(du,drive+f,to,from));
+ }
+ assert(!memcmp(old_du,du->luts,(size_t)du->phases*64)&&!memcmp(saved,raw->luts,sizeof(saved)));
+ printf("PASS: panel37=%d OOM=%d normal=%d fast=%d ordinary-fast=%d; all256 pairs, vendor bytes, white-only extras, equal-clear fast table, original DU settling and bounded caches\n",KIIKO_S31_READER_PANEL37,oom,n->phases,b->phases,ft->phases);
+}
+'''
+
+with tempfile.TemporaryDirectory(prefix='s31-reader-profiles-') as temporary:
+    folder = Path(temporary)
+    view = materialize(ROOT, folder / 'view', 'metalio47', tests=True)
+    test = folder / 'test.c'
+    test.write_text(UNIT)
+    headers = (view / 'components/e0470_epaper_waveform/include/e0470_epaper_waveform.h').read_text()
+    variants = (0, 1) if 'e0470_du14_waveform' in headers else (0,)
+    linker = '-Wl,-dead_strip' if sys.platform == 'darwin' else '-Wl,--gc-sections'
+    flags = ['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-g', '-fsanitize=address,undefined',
+             '-ffunction-sections', '-fdata-sections', linker, '-DKIIKO_S31_FAST_READER_PANELS=0',
+             '-Imain', '-Itools/shelf_waveform_host_stubs', '-Itools/waveform_host_stubs',
+             '-Icomponents/epdiy/include', '-Icomponents/epdiy/src',
+             '-Icomponents/e0470_epaper_waveform/include', '-Icomponents/e0470_epaper_waveform/metalio']
+    sources = [str(test), 'main/display_reader_waveform.c', 'main/display_main_waveform.c',
+               'components/e0470_epaper_waveform/e0470_epaper_waveform.c',
+               'components/e0470_epaper_waveform/e0470_waveform_trim.c']
+    for du14 in variants:
+        for panel37 in (0, 1):
+            exe = folder / f'profile-{du14}-{panel37}'
+            subprocess.run(flags + [f'-DKIIKO_S31_DU14={du14}',
+                           f'-DKIIKO_S31_READER_PANEL37={panel37}', *sources, '-o', str(exe)], cwd=view, check=True)
+            for oom in (0, 1):
+                dump = folder / 'normal.lut'
+                subprocess.run([str(exe), str(oom), str(dump)], check=True)
+                digest=hashlib.sha256(dump.read_bytes()).hexdigest()
+                if 'normal_digest' not in globals(): normal_digest=digest
+                assert digest==normal_digest, 'panel/OOM options must retain exact ordinary bytes'

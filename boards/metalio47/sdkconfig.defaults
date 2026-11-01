@@ -1,0 +1,153 @@
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_SPIRAM=y
+# 官方RGB/GDMA缓存关闭期间仍须供应行；ISR及其指针表均在内部RAM。/ Keep official RGB/GDMA cache-off feeding safe, with ISR code and pointer tables in internal RAM.
+CONFIG_LCD_RGB_ISR_IRAM_SAFE=y
+CONFIG_GDMA_CTRL_FUNC_IN_IRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+# S31使用独立Flash DIO80、Octal PSRAM200；不套用S3共时钟/HPM规则。
+# S31 uses DIO80 flash and Octal200 PSRAM; no S3 MSPI/HPM overrides.
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_SPIRAM_USE_MALLOC=y
+# 开机不做 16MB PSRAM 全量写入自检（开机实测省约 320ms）；坏块/坏颗粒靠装配自测覆盖。
+# Skip the full 16MB PSRAM write test at boot (~320ms measured); the assembly self-test covers it.
+CONFIG_SPIRAM_MEMTEST=n
+# 渲染线程逐行流式读 PSRAM 里的 framebuffer，cache 越大预取越不容易失效
+# 多层 EPUB/PNG 调用留安全余量；大型缓存不得放栈上。/ Reserve nested EPUB/PNG stack headroom; keep large caches off-stack.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=12288
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+# 1ms tick：EPD 上电流程里按毫秒轮询 PGOOD，100Hz 的 tick 会把每次等待放大到 10ms
+CONFIG_FREERTOS_HZ=1000
+# 长文件名以 UTF-8 交给界面与 fopen；磁盘 LFN 保持 UTF-16，不需要增加 CP936 表。
+# Pass long filenames to UI and fopen as UTF-8; on-disk LFN stays UTF-16 without a CP936 table.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_API_ENCODING_UTF_8=y
+
+# S31 2.0.66 对照：热路径进IRAM，协议栈优先PSRAM，固定TX减少内部堆碎片。
+# S31 2.0.66 comparison: IRAM hot paths, PSRAM-preferred stack and bounded static TX.
+# DMA行缓冲仍在内部SRAM；本地对照窗口和报文队列有界到64KiB。
+# LCD DMA remains internal; use bounded 64KiB TCP/packet queues for the local S31 comparison.
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=y
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=64
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER=y
+# CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER is not set
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=6
+CONFIG_ESP_WIFI_CACHE_TX_BUFFER_NUM=4
+CONFIG_ESP_WIFI_RX_BA_WIN=12
+CONFIG_ESP_WIFI_MGMT_SBUF_NUM=16
+CONFIG_ESP_WIFI_IRAM_OPT=y
+CONFIG_ESP_WIFI_RX_IRAM_OPT=y
+# WPA3-Personal（对齐官方老版本固件的连接稳健性；v6.1 符号 = ESP_WIFI_ENABLE_WPA3_SAE，旧版叫 WPA3_SAE）。
+# 不影响吞吐，仅让设备能连 WPA3 路由器并提高握手稳健性。/ Align with official firmware's robustness.
+CONFIG_ESP_WIFI_ENABLE_WPA3_SAE=y
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+CONFIG_HTTPD_MAX_URI_LEN=1024
+
+# 蓝牙：Bluedroid，只开 BLE。翻页器走 BLE；耳机音频已改由板载蓝牙音频模组（UART+I2S）
+# 承担，经典蓝牙/A2DP/AVRCP 已移出，不得在默认配置里重新打开——那会把约 20 KB 片内内存吃回去。
+# Bluetooth: Bluedroid, BLE only. The page-turner uses BLE; headset audio now runs on the
+# onboard Bluetooth audio module (UART + I2S). Classic BR/EDR, A2DP and AVRCP are gone and
+# must not be re-enabled here — they would take roughly 20 KB of internal RAM back.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_BLUEDROID_ENABLED=y
+CONFIG_BT_CLASSIC_ENABLED=n
+CONFIG_BT_A2DP_ENABLE=n
+CONFIG_BT_AVRCP_ENABLED=n
+# 翻页器走 BLE 4.2 的 legacy 扫描/连接（esp_ble_gattc_open、esp_ble_gap_start_scanning
+# 这些 API 在 BLE_42_FEATURE_SUPPORT 下才编译）；4.2 与 5.0 互斥。
+# The page-turner uses BLE 4.2 legacy scan/connect (esp_ble_gattc_open and
+# esp_ble_gap_start_scanning only compile under BLE_42_FEATURE_SUPPORT); 4.2 excludes 5.0.
+CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y
+CONFIG_BT_BLE_50_FEATURES_SUPPORTED=n
+CONFIG_BT_BLE_ENABLED=y
+CONFIG_BT_GATTC_ENABLE=y
+CONFIG_BT_BLE_SMP_ENABLE=y
+# bond 密钥必须落 NVS，否则每次重启都要重新配对，自动重连形同虚设。
+# Bond keys must reach NVS, or every reboot re-pairs and auto-reconnect is useless.
+CONFIG_BT_BLE_SMP_BOND_NVS_FLASH=y
+CONFIG_BT_GATTC_NOTIF_REG_MAX=4
+CONFIG_BT_GATTC_CONNECT_RETRY_COUNT=3
+CONFIG_BT_BLUEDROID_MEM_DEBUG=n
+# 蓝牙侧内存优先从 PSRAM 分配：BT 栈起来后内部 RAM 只剩 ~6-7 KB，
+# esp_timer 等必须内部 RAM 的分配会直接失败。
+# Prefer PSRAM for Bluedroid allocations: after the stack comes up internal RAM is
+# down to ~6-7 KB, which starves allocations that must live internally.
+CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST=y
+CONFIG_BTDM_CTRL_MODE_BLE_ONLY=y
+# S31控制器采用本SDK原生默认值，不保留S3的BLE_MAX_ACT配置。
+# Use native S31 controller settings rather than S3 BLE_MAX_ACT.
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
+CONFIG_BT_CTRL_BLE_ADV_REPORT_FLOW_CTRL_NUM=50
+
+CONFIG_TINYUSB_MSC_ENABLED=y
+CONFIG_TINYUSB_MSC_BUFSIZE=16384
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# rc76: keep transfer listings and TLS allocations out of internal task RAM.
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+# 使用SDK交叉签名验证，保留真实证书有效期/主机名检查，不添加废弃根。 / Use SDK cross-signed validation without deprecated roots or bypassing real certificate checks.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+CONFIG_IDF_TARGET="esp32s31"
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_300=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="boards/metalio47/partitions.csv"
+CONFIG_READ_PICO_I2C_FREQ_HZ=100000
+CONFIG_READ_PICO_I2C_PORT=1
+CONFIG_READ_PICO_I2C_SDA_GPIO=0
+CONFIG_READ_PICO_I2C_SCL_GPIO=1
+CONFIG_READ_PICO_IOE_INT_GPIO=2
+CONFIG_READ_PICO_TP_INT_GPIO=5
+CONFIG_TINYUSB_DESC_PRODUCT_STRING="kiikoread Metalio S31"
+CONFIG_TINYUSB_DESC_MANUFACTURER_STRING="kiikoread"
+
+
+# CONFIG_LWIP_SNTP_STARTUP_DELAY is not set
+
+# Bluedroid 任务栈按 IDF 默认；BLE HID 报文很短，不需要再加。
+# Bluedroid task stacks stay at IDF defaults; BLE HID reports are short.
+CONFIG_BT_BTC_TASK_STACK_SIZE=4096
+CONFIG_BT_BTU_TASK_STACK_SIZE=4608
+
+CONFIG_LWIP_TCP_WND_DEFAULT=65535
+
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=5760
+
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=64
+
+CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=64
+
+# Bounded out-of-order reception and selective ACKs avoid whole-window retransmission.
+CONFIG_LWIP_TCP_OOSEQ_MAX_PBUFS=12
+CONFIG_LWIP_TCP_SACK_OUT=y
+# DHCP 绑定前做 ARP 冲突探测（对齐官方老版本固件；RFC5227 简化版，约 1-2s）。
+# 避免拿到被占用的 IP 导致 WiFi 连上却不通。依赖 !LWIP_AUTOIP，本机未开 AUTOIP。/ Ported from official firmware.
+CONFIG_LWIP_DHCP_DOES_ARP_CHECK=y
+
+# 原厂S31固定聚合/报文预算。/ Vendor S31 aggregation and packet budgets.
+CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=y
+CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=y
+CONFIG_ESP_WIFI_TX_BA_WIN=64
+CONFIG_LWIP_TCP_MSS=1440
+CONFIG_LWIP_SO_RCVBUF=y
+
+# 原厂PSRAM优先阈值与管理帧预算。/ Vendor PSRAM-preferred threshold and management RX budget.
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16
+CONFIG_ESP_WIFI_RX_MGMT_BUF_NUM_DEF=5
+CONFIG_ESP_WIFI_SLP_IRAM_OPT=y
+
+# 冷启动快速引导：开机/深睡唤醒不再逐段读回 5.7MB 应用镜像做校验（实测省约 0.9s）。
+# 软复位仍会校验，OTA 回滚照旧；代价是断电启动无法发现镜像损坏。不做安全启动，无签名校验可绕过。
+# Fast boot: skip reading back and verifying the 5.7MB app image on power-on/deep wake (~0.9s measured).
+# Soft resets still validate, OTA rollback is unchanged; a corrupted image would go unnoticed on power-on.
+CONFIG_BOOTLOADER_SKIP_VALIDATE_ON_POWER_ON=y
+CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP=y

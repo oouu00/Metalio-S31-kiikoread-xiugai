@@ -1,0 +1,9 @@
+# 调试版（debug 档）增量配置：叠加在 sdkconfig.defaults 之后。
+# 默认级别提到 DEBUG，运行期还可以用 esp_log_level_set() 再提高（MAXIMUM 跟随默认值）。
+# Debug overlay, applied after sdkconfig.defaults. Default level goes to DEBUG and the runtime
+# ceiling follows it, so esp_log_level_set() can still raise individual tags.
+CONFIG_LOG_DEFAULT_LEVEL_DEBUG=y
+CONFIG_LOG_MAXIMUM_EQUALS_DEFAULT=y
+# 引导阶段保留完整信息，方便确认启动流程卡在哪一段。
+# Keep the bootloader verbose so a boot stall is visible.
+CONFIG_BOOTLOADER_LOG_LEVEL_INFO=y

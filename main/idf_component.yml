@@ -1,0 +1,17 @@
+dependencies:
+  espressif/qrcode: "0.2.0"
+  espressif/esp_jpeg: "1.3.1"
+  # 渐进式 JPEG：DC-only 的 1/8 换成语义正确的 1/1..1/8 解码。
+  # Progressive JPEG: replace the DC-only 1/8 fallback with a real 1/1..1/8 decoder.
+  defensiblelogic/lowzag: "^2.2.1"
+  espressif/libpng: "1.6.58~2"
+  espressif/esp_tinyusb:
+    override_path: ../components/espressif__esp_tinyusb
+
+  espressif/libjpeg-turbo: '*'
+  espressif/cjson: '*'
+  # 音频解码（MP3/AAC(M4A)/FLAC/WAV 的 Simple Decoder）。
+  # Audio decoding (MP3/AAC(M4A)/FLAC/WAV via the Simple Decoder).
+  espressif/esp_audio_codec: 2.6.2
+  # esp-sr：语音翻页识别。/ esp-sr: speech recognition for voice page-turn.
+  espressif/esp-sr: 2.6.0
