@@ -14,7 +14,7 @@ unit=r'''
 #include <stdio.h>
 #include <string.h>
 enum {APP_REDRAW_NONE,APP_REDRAW_PAGE,UI_GESTURE_TAP,UI_GESTURE_LONG_PRESS,FILE_VIEW_LIST,FILE_VIEW_MOVE,FILE_VIEW_DIR_OPTIONS};
-#define UI_FILES_ROWS 7
+#define UI_FILES_ROWS 6
 static int s_view=FILE_VIEW_DIR_OPTIONS,s_counts[3],book_saves,font_saves,changed,scans;
 static char s_dir[288]="/sdcard/books",s_message[96],book_path[288],font_path[288];
 static bool save_ok=true,s_file_grid;

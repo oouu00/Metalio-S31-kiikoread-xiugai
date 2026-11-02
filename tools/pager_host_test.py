@@ -18,7 +18,7 @@ unit=r'''
 #include <string.h>
 #include "assets/ui_icons.h"
 #define FILE_ROWS 9
-#define UI_FILES_ROWS 7
+#define UI_FILES_ROWS 6
 #define UI_LOCK_HEIGHT 1216
 typedef struct {int x,y,width,height;} EpdRect;
 enum {EPD_DRAW_ALIGN_CENTER,UI_GRAY_WHITE=255};

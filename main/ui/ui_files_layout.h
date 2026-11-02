@@ -6,7 +6,9 @@
 #include "epdiy.h"
 #define UI_FILES_LIST_TOP 310
 #define UI_FILES_ROW_HEIGHT 94
-#define UI_FILES_ROWS 7
+// 7 行时末行底部 310+7*94=968，会压在 TF 卡根目录那排动作按钮(875 起)上；限 6 行。
+// 7 rows would end at 310+7*94=968, colliding with the TF-root action bar starting at 875; cap at 6.
+#define UI_FILES_ROWS 6
 #define UI_FILES_LIST_END (UI_FILES_LIST_TOP + UI_FILES_ROW_HEIGHT * UI_FILES_ROWS)
 #define UI_FILES_FOOTER_TOP 1096
 static inline EpdRect ui_files_storage_rect(void) { return (EpdRect){36,175,612,200}; }
