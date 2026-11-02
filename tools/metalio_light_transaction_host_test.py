@@ -42,16 +42,22 @@ static int ttf_font_suspend_io(void){return fail()?-2:ESP_OK;}
 // 新桩：SD 卡轨迹日志。卡不可用时静默丢弃，桩不记数、不影响流程与时钟。
 // English: new stub for the SD trace log; silently dropped without a card and inert here.
 static void power_trace(const char *fmt,...){ (void)fmt; }
+// 新桩：蓝牙唤醒时间线日志（sleep.c 的 SLEEP 记录），宿主侧静默丢弃。
+// English: stub for the BT wake timeline; discarded on the host.
+static void bt_trace(const char *fmt,...){ (void)fmt; }
+static void bt_trace_flush(void){}
 // 新桩：唤醒后的按键证据。源码已把「没认出来<｜hy_place▁holder▁no▁813｜>二级 evidence：
 //   seen = 休眠期间 P17 真的低过（按下过），held = 事后 12 ms 仍按着。
 // 旧的 metalio_confirm_power_key() 只等价于 held，所以现在额外给出独立的 seen。
 // English: new stub for the post-wake key evidence, which splits one read into two levels:
 //   seen = P17 was really low during sleep (a press happened), held = still low 12 ms later.
 // The old metalio_confirm_power_key() only matched `held`, hence the separate `seen` flag.
-typedef struct {bool seen;bool held;} metalio_power_key_evidence_t;
+typedef struct {bool seen;bool held;bool stable;bool readable;} metalio_power_key_evidence_t;
 static bool evidence_seen;
 static metalio_power_key_evidence_t metalio_power_key_evidence(void){
-    metalio_power_key_evidence_t e={evidence_seen,confirmed};
+    // 桩：stable/readable 跟随 seen，既有断言仍视为「可判定且非毛刺」。
+    // Stub: stable/readable follow seen so existing assertions stay "decidable, not a glitch".
+    metalio_power_key_evidence_t e={evidence_seen,confirmed,evidence_seen,true};
     return e;
 }
 // 新桩：解锁判定现在还会看 app_settings_wake_presses()（1=单击直接解锁，2=仍要采样双击）。
@@ -134,10 +140,16 @@ int main(void){
  reset();allow_key=false;assert(lock_light_sleep_once((void*)1,(void*)2,&key,0,false)==ESP_ERR_INVALID_STATE&&!key&&latches==1);restored();
  // A shared EXT1 without verified physical P17 is not an unlock in single or double mode.
  // 新源码把证据拆成两级，所以「没有验证到 P17」要同时清掉 seen 与 held。
- // English: the evidence is split in two now, so an unverified shared IRQ clears seen as well as held.
+ // 更进一步：EXT1 是 RTC 硬件锁存，无 P17 证据的 EXT1 现在按电气毛刺处理——丢弃该次唤醒并
+ // 继续本片浅睡（不恢复外设、不解锁），由 60 s deadline 收尾。旧行为是立刻返回 INVALID_STATE。
+ // English: the evidence is split in two, so an unverified shared IRQ clears seen as well as held.
+ // Further: EXT1 is latched in hardware, so an EXT1 without P17 evidence is now treated as an
+ // electrical glitch — dropped, the slice keeps sleeping and ends on the 60 s deadline instead of
+ // restoring peripherals and returning INVALID_STATE immediately.
  for(unsigned mode=0;mode<2;mode++){
   reset();allow_key=mode;confirmed=evidence_seen=false;
-  assert(lock_light_sleep_once(NULL,(void*)2,&key,0,false)==ESP_ERR_INVALID_STATE&&!key&&!latches);restored();
+  assert(lock_light_sleep_once(NULL,(void*)2,&key,120000000,false)==ESP_OK&&!key&&!latches);
+  assert(sleeps>=2);restored();
  }
  // Every failing operation restores all resources already changed; no timer or error unlocks.
  // 例外：源码新增的 cst836u_wake() 重试能吃掉一次注入的 I2C 毛刺——只有这一次

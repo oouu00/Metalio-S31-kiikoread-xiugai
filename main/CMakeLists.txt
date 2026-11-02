@@ -78,6 +78,9 @@ kiiko_board_sources(kiiko_selected_sources "${CMAKE_CURRENT_LIST_DIR}" "app_main
         "app/sd_recovery.c"
         "app/crash_note.c"
         "app/turn_trace.c"
+        # 定时内存水位采样：debug 档把 SRAM/PSRAM 水位写 /sdcard/mem_trace.csv。
+        # Periodic memory watermark: SRAM/PSRAM rows into /sdcard/mem_trace.csv in debug builds.
+        "app/mem_trace.c"
         # 蓝牙/睡眠诊断：关键事件落到 TF 卡 /sdcard/.metalio_s31/bt_trace.log。
         # Bluetooth/sleep diagnostics: key events parked in /sdcard/.metalio_s31/bt_trace.log.
         "app/bt_trace.c"
@@ -185,6 +188,16 @@ target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_panic_handler")
 option(METALIO_TURN_TRACE "Log per-stage page-turn timing to /sdcard/turn_trace.csv" OFF)
 if(METALIO_TURN_TRACE)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE METALIO_TURN_TRACE=1)
+endif()
+
+# 定时内存水位：内部 SRAM 与 PSRAM 的空闲 / 最大连续块 / 历史最低每 3 秒一行落
+# /sdcard/mem_trace.csv。默认关，debug 档或显式 -DMETALIO_MEM_TRACE=ON 才编进去；
+# 正式版不带写卡调试代码。
+# Periodic memory watermarks: one SRAM/PSRAM row every 3 s into /sdcard/mem_trace.csv.
+# Off by default; only the debug profile or an explicit -DMETALIO_MEM_TRACE=ON compiles it in.
+option(METALIO_MEM_TRACE "Log SRAM/PSRAM watermarks to /sdcard/mem_trace.csv" OFF)
+if(METALIO_MEM_TRACE)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE METALIO_MEM_TRACE=1)
 endif()
 
 # 蓝牙/睡眠诊断：bt_host 的 AT 收发、模式切换、链路、喂帧统计与播放器/睡眠节点，

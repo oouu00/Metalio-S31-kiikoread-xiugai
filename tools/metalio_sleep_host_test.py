@@ -88,6 +88,13 @@ static void metalio_frontlight(unsigned b,unsigned w){assert(!b&&w==50);frontlig
 static void metalio_frontlight_restore(void){frontlight_calls++;}
 static void lock_resume_io_service(void){}
 static bool lock_take_key_wakeup(void){return key_at>=0&&clock_us>=key_at;}
+// 新接口：锁屏等待顶部要求硬件按键证据（P17 仍为低）。桩恒报「有按下」，
+// 让既有的 key_at 断言语义不变；drain 桩为惰性，不影响时钟与调度计数。
+// New gate: the lock wait now needs hardware key evidence; the stub always reports a press
+// so the existing key_at assertions keep their meaning. The drain stub is inert.
+typedef struct {bool seen;bool held;bool stable;bool readable;} metalio_power_key_evidence_t;
+static metalio_power_key_evidence_t metalio_power_key_evidence(void){metalio_power_key_evidence_t e={true,true,true,true};return e;}
+static void read_pico_pmu_drain_events(void){}
 static bool metalio_usb_blocks_sleep(void){return (unplug_at<0||clock_us<unplug_at)&&(usb||powered||(plug_at>=0&&clock_us>=plug_at));}
 static void metalio_usb_serial_reconnect(void){++reconnects;}
 static void read_pico_clear_ioe_int(void){}

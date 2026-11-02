@@ -31,7 +31,13 @@ bool metalio_confirm_power_key(void);
 /// Wake evidence: seen = the first P17 read is low (a real press happened), held = still low
 /// 12 ms later. A quick tap is usually released during peripheral restoration, so testing
 /// "still held" alone drops that press and forces a second one.
-typedef struct { bool seen; bool held; } metalio_power_key_evidence_t;
+/// stable=连续复读仍全为低（排除 P17/共享线的电气毛刺），readable=首读I2C成功。
+/// EXT1 是 RTC 域硬件锁存，任何窄脉冲都会置位；轻按40ms 对 3 次快读仍全为低，
+/// 所以 stable 能滤掉微秒级毛刺而不吞真实按键。
+/// stable = every consecutive re-read is still low (rejects an electrical glitch on P17 or the
+/// shared line); readable = the first I2C read succeeded. EXT1 is latched in the RTC domain, so
+/// even a sub-millisecond pulse sets it, while a real 40 ms tap covers all three fast reads.
+typedef struct { bool seen; bool held; bool stable; bool readable; } metalio_power_key_evidence_t;
 metalio_power_key_evidence_t metalio_power_key_evidence(void);
 /// 深睡启动硬件初始化时确认的真实按键。/ Real key confirmed early during deep-boot hardware initialization.
 bool metalio_boot_power_key(void);

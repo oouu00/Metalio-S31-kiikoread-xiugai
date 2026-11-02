@@ -176,7 +176,7 @@ def run(cmd, cwd) -> int:
 
 
 def build(ver: str = "", trace: bool = False, selftest: bool = False,
-          bt_trace: bool = False, profile: str = "release") -> int:
+          bt_trace: bool = False, mem_trace: bool = False, profile: str = "release") -> int:
     setup_env()
     if ver:
         # PROJECT_VER 在配置期读取环境变量；改了要强制 cmake 重新配置才会生效。
@@ -195,6 +195,11 @@ def build(ver: str = "", trace: bool = False, selftest: bool = False,
     # unrelated to page-turn timing, so a silent-after-wake capture needs only this one and no
     # turn CSV. Delivery images carry neither.
     print(f"[bt-trace] METALIO_BT_TRACE={'ON' if bt_trace else 'OFF'}")
+    # 内存水位采样（写 TF 卡 mem_trace.csv）：和翻页计时/蓝牙诊断是独立开关，
+    # debug 档默认随诊断一起打开，release 档强制关闭。
+    # Memory watermark sampling (mem_trace.csv on the TF card) is independent of the other two
+    # traces: on by default in the debug profile, forced off in release.
+    print(f"[mem-trace] METALIO_MEM_TRACE={'ON' if mem_trace else 'OFF'}")
     # 无人值守自测：开机在热点与蓝牙耳机之间轮换，每相位重启，进度存 NVS。仅本地测试用。
     # Unattended self-test: rotate hotspot/Bluetooth phases across reboots with progress in NVS. Local tests only.
     print(f"[selftest] METALIO_AUTO_TEST={'ON' if selftest else 'OFF'}")
@@ -205,6 +210,7 @@ def build(ver: str = "", trace: bool = False, selftest: bool = False,
          f"-DSDKCONFIG={sdkconfig_path(profile)}",
          f"-DMETALIO_TURN_TRACE={'ON' if trace else 'OFF'}",
          f"-DMETALIO_BT_TRACE={'ON' if bt_trace else 'OFF'}",
+         f"-DMETALIO_MEM_TRACE={'ON' if mem_trace else 'OFF'}",
          f"-DMETALIO_AUTO_TEST={'ON' if selftest else 'OFF'}", "--preview", "build"],
         PROJ,
     )
@@ -316,21 +322,26 @@ def main() -> int:
                         help="打开蓝牙/睡眠诊断（写 TF 卡 .metalio_s31/bt_trace.log）/ Enable Bluetooth and sleep tracing")
     parser.add_argument("--no-bt-trace", dest="bt_trace", action="store_false",
                         help="关闭蓝牙/睡眠诊断 / Disable Bluetooth and sleep tracing")
+    parser.add_argument("--mem-trace", dest="mem_trace", action="store_true", default=None,
+                        help="打开内存水位采样（写 TF 卡 mem_trace.csv）/ Enable SRAM/PSRAM watermark sampling")
+    parser.add_argument("--no-mem-trace", dest="mem_trace", action="store_false",
+                        help="关闭内存水位采样 / Disable SRAM/PSRAM watermark sampling")
     args = parser.parse_args()
 
     global BUILD
     BUILD = build_dir(args.profile)
     if args.profile == "release":
-        if args.trace or args.bt_trace or args.selftest:
-            print("[profile] release 档不带诊断代码：--trace / --bt-trace / --selftest 已忽略；"
+        if args.trace or args.bt_trace or args.mem_trace or args.selftest:
+            print("[profile] release 档不带诊断代码：--trace / --bt-trace / --mem-trace / --selftest 已忽略；"
                   "要抓日志请用 --profile debug")
-        trace, bt_trace, selftest = False, False, False
+        trace, bt_trace, mem_trace, selftest = False, False, False, False
     else:
         trace = True if args.trace is None else args.trace
         bt_trace = True if args.bt_trace is None else args.bt_trace
+        mem_trace = True if args.mem_trace is None else args.mem_trace
         selftest = args.selftest
 
-    rc = build(args.ver, trace, selftest, bt_trace, args.profile)
+    rc = build(args.ver, trace, selftest, bt_trace, mem_trace, args.profile)
     if rc != 0:
         print("[!] build failed")
         if len(sys.argv) <= 1:

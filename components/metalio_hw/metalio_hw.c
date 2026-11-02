@@ -172,11 +172,25 @@ bool metalio_confirm_power_key(void) {
 // glitch. Requiring "still low 30 ms later" dropped taps of about 40 ms that get released
 // during peripheral restoration, which is why one press sometimes worked and often did not.
 metalio_power_key_evidence_t metalio_power_key_evidence(void) {
-    metalio_power_key_evidence_t e={false,false};
+    metalio_power_key_evidence_t e={false,false,false,false};
     uint16_t first=0xffff;
     if(metalio_io_read(&first)!=ESP_OK) return e;
+    e.readable=true;
     if(first&(1u<<15)) return e;
     e.seen=true;
+    // 连续快读确认：一次 2 字节 I2C 读约 200 us，连读三次 ≈ 600 us 窗口。40 ms 的真轻按三次
+    // 必然全为低；而 P17/共享线上的微秒级电气毛刺会被后续读到的高电平否掉。
+    // 复读本身失败不代表「没按」，不否决（避免 I2C 抖动时把真按键判丢）。
+    // Consecutive fast re-reads (≈200 us each) span ≈600 us total: a real 40 ms tap reads low on
+    // all three, while a microsecond-scale glitch on P17 or the shared line is rejected by the next
+    // sample. A failed re-read is not evidence of release, so it never vetoes the press.
+    bool steady=true;
+    for(unsigned i=0;i<2;i++) {
+        uint16_t again=0xffff;
+        if(metalio_io_read(&again)!=ESP_OK) continue;
+        if(again&(1u<<15)) { steady=false; break; }
+    }
+    e.stable=steady;
     vTaskDelay(pdMS_TO_TICKS(12));
     uint16_t again=0xffff;
     e.held=metalio_io_read(&again)==ESP_OK && !(again&(1u<<15));

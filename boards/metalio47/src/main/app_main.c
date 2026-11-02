@@ -19,6 +19,7 @@
 #include "setup_state.h"
 #include "app_auto_test.h"
 #include "bt_trace.h"
+#include "mem_trace.h"
 #include "app_content_open.h"
 #include "boot_state.h"
 #include "lock_screen.h"
@@ -194,6 +195,11 @@ void app_main(void) {
     // Arm Bluetooth/sleep diagnostics early: every AT exchange, mode switch and suspend/wake
     // lands in /sdcard/.metalio_s31/bt_trace.log; until the card mounts the lines wait in RAM.
     bt_trace_start();
+    // 定时内存水位：debug 档每 3 秒把 SRAM/PSRAM 用量写 /sdcard/mem_trace.csv，
+    // 用于定位长时间阅读的内存泄漏与内部 SRAM 被啃薄的阶段。
+    // Periodic memory watermark: in debug builds, SRAM/PSRAM usage lands in
+    // /sdcard/mem_trace.csv every 3 s to pin down leaks and the phase that thins internal SRAM.
+    mem_trace_start();
     // 自测构建在 SD 挂载前保留 USJ，避免挂载后的软重连把串口日志带走。
     // Self-test builds retain USJ before the SD mount so the post-mount soft reconnect cannot drop the console.
     app_auto_test_prepare();

@@ -535,8 +535,23 @@ app_wake_source_t app_light_sleep_wait_timed(sc7a20h_handle_t acc,uint32_t timeo
     ESP_LOGI(TAG,"S31 lock wait: off_delay_ms=%lld usb=%u pickup=%u checkpoint=%u music=%u",
         (long long)(off_delay/1000),(unsigned)usb_was_blocked,(unsigned)pickup,
         (unsigned)s_lock_deep_ready,(unsigned)music_awake);
+    // 锁屏动作本身那一按的 PMU 事件可能晚于入口 drain 才落进 FIFO（去抖延迟），
+    // 若不清掉，循环首轮 lock_take_key_wakeup() 会把它当成一次新的电源键按下而直接解锁——
+    // 表现就是「锁屏后没按电源键，却被唤醒」。
+    // 走到这里时锁图已经推完（秒级），这一按的事件必然已在队列里，清掉之后 FIFO 里再出现的
+    // 才是锁屏期间真正的新按键。
+    // The lock-initiating press can land in the PMU FIFO after the entry drain (debounce).
+    // Clear it once more after the art is presented; only later presses may then wake.
+    if(s_lock_sleep_touch) read_pico_pmu_drain_events();
     for(;;) {
-        if(lock_take_key_wakeup()) { wake=APP_WAKE_KEY; break; }
+        // 锁屏等待期间只接受带硬件证据（P17 此刻仍为低）的按下：PMU 里的一条历史键事件
+        // 不足以授权解锁，否则锁屏动作本身的那一按就会在循环首轮把设备唤醒。
+        // 无硬件证据时不消费事件，交给 lock_light_sleep_once() 的 P17/EXT1 判定，
+        // 避免把一次真实的轻按吞掉。
+        // Only a hardware-backed press (P17 low) may unlock during the lock wait; a lone
+        // PMU history event must not. Without evidence the event is left for the P17/EXT1
+        // path in lock_light_sleep_once(), so a real quick tap is never swallowed.
+        if(metalio_power_key_evidence().seen && lock_take_key_wakeup()) { wake=APP_WAKE_KEY; break; }
         const bool keep_music=music_awake && music_state()==MUSIC_PLAYING;
         // 放着音乐就不进浅睡、也不深睡：浅睡会停 CPU 与电源轨，I2S 立刻断流。
         // Keep the CPU up while audio plays: light sleep stops it and the I2S stream dies.
@@ -718,7 +733,7 @@ static esp_err_t lock_light_sleep_once(sc7a20h_handle_t acc,cst836u_handle_t tou
     }
     bool touch_asleep=false,sd_closed=false,lcd_stopped=false,keys_ready=false,rails_cut=false,pins_prepared=false;
     uint16_t saved_rails=0;
-    bool key_irq=false,power_confirmed=false,key_seen=false;
+    bool key_irq=false,power_confirmed=false,key_seen=false,key_stable=false,key_readable=false;
     s_lock_io_no_media=!info.mounted && !s_lock_io_pending;
     s_lock_io_pending=true;
     // 诊断日志必须在动 SD 总线之前落盘：下面 read_pico_sd_sync 之后就要重配 SDIO 引脚、
@@ -767,6 +782,9 @@ static esp_err_t lock_light_sleep_once(sc7a20h_handle_t acc,cst836u_handle_t tou
         bt_trace("SLEEP light enter wake_by=%d rails_cut=%d", (int)(wake_by != 0), (int)rails_cut);
         unsigned maintenance=0;
         for(;;) {
+            // 本片浅睡内被判为电气毛刺的 EXT1 不算唤醒，继续睡，不恢复外设。
+            // An EXT1 discarded as an electrical glitch does not end this slice.
+            bool glitch_dropped=false;
             if(wake_by && esp_timer_get_time()>=wake_by) break;
             err=metalio_light_sleep_start();
             if(err!=ESP_OK){ power_trace("lso start fail@612: err=%s",esp_err_to_name(err)); break; }
@@ -780,10 +798,28 @@ static esp_err_t lock_light_sleep_once(sc7a20h_handle_t acc,cst836u_handle_t tou
             if(key_irq){
                 metalio_power_key_evidence_t evidence=metalio_power_key_evidence();
                 key_seen=evidence.seen;
+                key_readable=evidence.readable;
+                key_stable=evidence.stable;
                 power_confirmed=evidence.held;
+                // EXT1 是 RTC 域硬件锁存：P17 或共享 INT 线上任何窄脉冲都会把它置位，所以
+                // key_irq 本身不足以授权解锁。只有「唤醒瞬间连续多次读到 P17 为低」才算电源键；
+                // 判定为毛刺时丢弃本次 EXT1 继续本片浅睡——不恢复外设、不解锁。读失败无法判定，
+                // 保守放行，避免 I2C 抖动时把真实轻按判丢。
+                // EXT1 is latched in the RTC domain, so any narrow pulse on P17 or the shared INT
+                // line sets it — key_irq alone must never authorize an unlock. Only a press that
+                // still reads low on consecutive samples counts; a clear glitch is dropped and this
+                // slice keeps sleeping (no peripheral restore, no unlock). A failed read cannot
+                // decide, so it falls through rather than dropping a real tap.
+                if(key_readable && !(key_seen && key_stable)) {
+                    power_trace("wake drop: P17 glitch seen=%u stable=%u int=%d",
+                        (unsigned)key_seen,(unsigned)key_stable,read_pico_ioe_int_level());
+                    key_irq=false;
+                    glitch_dropped=true;
+                }
             }
-            if(key_irq || !(causes & (1u<<ESP_SLEEP_WAKEUP_TIMER)) ||
-                (wake_by && esp_timer_get_time()>=wake_by)) break;
+            if(key_irq) break;
+            if(!glitch_dropped && !(causes & (1u<<ESP_SLEEP_WAKEUP_TIMER))) break;
+            if(wake_by && esp_timer_get_time()>=wake_by) break;
             // 定时切片仅检查USB和共享唤醒线；保持TF/字体/LCD和电源轨关闭。
             // Timer slices check USB and the shared wake line with media/LCD/rails still suspended.
             ++maintenance;
